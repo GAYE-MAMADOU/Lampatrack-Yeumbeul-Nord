@@ -61,22 +61,24 @@ export default function Index() {
 
   // Get user's current location
   useEffect(() => {
-    if (!isAdmin && navigator.geolocation) {
-      navigator.geolocation.watchPosition(
-        (position) => {
-          setUserLocation({
-            lat: position.coords.latitude,
-            lng: position.coords.longitude
-          });
-          setLocationError(null);
-        },
-        (error) => {
-          console.error('Erreur de géolocalisation:', error);
-          setLocationError('Impossible d\'obtenir votre position');
-        },
-        { enableHighAccuracy: true, timeout: 10000, maximumAge: 30000 }
-      );
-    }
+    if (isAdmin || !navigator.geolocation) return;
+
+    const watchId = navigator.geolocation.watchPosition(
+      (position) => {
+        setUserLocation({
+          lat: position.coords.latitude,
+          lng: position.coords.longitude
+        });
+        setLocationError(null);
+      },
+      (error) => {
+        console.error('Erreur de géolocalisation:', error);
+        setLocationError('Impossible d\'obtenir votre position');
+      },
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 30000 }
+    );
+
+    return () => navigator.geolocation.clearWatch(watchId);
   }, [isAdmin]);
 
   // Filter lampadaires based on search and status
@@ -117,6 +119,24 @@ export default function Index() {
       navigate('/auth');
     }
   }, [user, authLoading, navigate]);
+
+  // Welcome message for first-time users (e.g. after Google sign-up)
+  useEffect(() => {
+    if (user && !authLoading) {
+      const welcomeKey = `welcomed_${user.id}`;
+      const alreadyWelcomed = localStorage.getItem(welcomeKey);
+      if (!alreadyWelcomed) {
+        const displayName = user.user_metadata?.full_name || user.user_metadata?.name || user.email;
+        localStorage.setItem(welcomeKey, 'true');
+        setTimeout(() => {
+          toast.success(`Bienvenue sur LampaTrack, ${displayName} ! 🎉`, {
+            description: 'Vous pouvez maintenant signaler les lampadaires en panne dans votre quartier.',
+            duration: 6000,
+          });
+        }, 500);
+      }
+    }
+  }, [user, authLoading]);
 
   if (authLoading || lampadairesLoading) {
     return (
@@ -330,6 +350,19 @@ export default function Index() {
                     onCheckedChange={(checked) => checked ? pushSubscribe() : pushUnsubscribe()}
                   />
                 </div>
+
+                {/* Profile link */}
+                <Button 
+                  variant="outline" 
+                  className="w-full justify-start gap-2"
+                  onClick={() => {
+                    setMenuOpen(false);
+                    navigate('/profile');
+                  }}
+                >
+                  <Settings className="h-4 w-4" />
+                  Mon Profil
+                </Button>
 
                 {/* Admin link */}
                 {isAdmin && (

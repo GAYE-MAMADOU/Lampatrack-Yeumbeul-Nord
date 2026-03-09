@@ -33,7 +33,7 @@ export function usePushNotifications() {
     if (!user) return;
     try {
       const reg = await navigator.serviceWorker.ready;
-      // @ts-expect-error pushManager is available in modern browsers
+      
       const sub = await reg.pushManager.getSubscription();
       setIsSubscribed(!!sub);
     } catch {
@@ -60,10 +60,9 @@ export function usePushNotifications() {
         return;
       }
 
-      // @ts-expect-error pushManager is available in modern browsers
       const sub = await reg.pushManager.subscribe({
         userVisibleOnly: true,
-        applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY),
+        applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY) as BufferSource,
       });
 
       const subJson = sub.toJSON() as { endpoint: string; keys: { p256dh: string; auth: string } };
@@ -95,7 +94,7 @@ export function usePushNotifications() {
     setLoading(true);
     try {
       const reg = await navigator.serviceWorker.ready;
-      // @ts-expect-error pushManager is available in modern browsers
+      
       const sub = await reg.pushManager.getSubscription();
       if (sub) {
         await sub.unsubscribe();

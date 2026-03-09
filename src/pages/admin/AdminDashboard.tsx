@@ -11,8 +11,11 @@ import {
   FileText, 
   MapPin, 
   Users,
-  Clock
+  Clock,
+  Download
 } from 'lucide-react';
+import { supabase } from '@/integrations/supabase/client';
+import { toast } from 'sonner';
 import AdminSignalements from './AdminSignalements';
 import AdminLampadaires from './AdminLampadaires';
 import AdminStats from './AdminStats';
@@ -23,6 +26,45 @@ export default function AdminDashboard() {
   const { user, loading: authLoading, isAdmin } = useAuth();
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState('signalements');
+  const [exporting, setExporting] = useState(false);
+
+  const handleExportDatabase = async () => {
+    setExporting(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) throw new Error('Non authentifié');
+
+      const response = await fetch(
+        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/export-database`,
+        {
+          headers: {
+            Authorization: `Bearer ${session.access_token}`,
+            'Content-Type': 'application/json',
+          },
+        }
+      );
+
+      if (!response.ok) {
+        const err = await response.json();
+        throw new Error(err.error || 'Erreur lors de l\'export');
+      }
+
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `lampatrack_backup_${new Date().toISOString().slice(0, 10)}.sql`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      toast.success('Export téléchargé avec succès !');
+    } catch (err: any) {
+      toast.error(err.message || 'Erreur lors de l\'export');
+    } finally {
+      setExporting(false);
+    }
+  };
 
   const { lampadaires, loading: lampadairesLoading, fetchLampadaires, addLampadaire, updateLampadaire, deleteLampadaire } = useLampadaires();
   const { signalements, loading: signalementsLoading, fetchSignalements, processSignalement } = useSignalements();
@@ -65,11 +107,24 @@ export default function AdminDashboard() {
           </div>
         </div>
 
-        {pendingSignalements.length > 0 && (
-          <div className="bg-warning/10 text-warning px-3 py-1 rounded-full text-sm font-medium">
-            {pendingSignalements.length} signalement{pendingSignalements.length > 1 ? 's' : ''} en attente
-          </div>
-        )}
+        <div className="flex items-center gap-2">
+          <Button 
+            variant="outline" 
+            size="sm" 
+            onClick={handleExportDatabase}
+            disabled={exporting}
+            className="flex items-center gap-2"
+          >
+            <Download className="h-4 w-4" />
+            <span className="hidden sm:inline">{exporting ? 'Export...' : 'Backup SQL'}</span>
+          </Button>
+
+          {pendingSignalements.length > 0 && (
+            <div className="bg-warning/10 text-warning px-3 py-1 rounded-full text-sm font-medium">
+              {pendingSignalements.length} signalement{pendingSignalements.length > 1 ? 's' : ''} en attente
+            </div>
+          )}
+        </div>
       </header>
 
       {/* Content */}

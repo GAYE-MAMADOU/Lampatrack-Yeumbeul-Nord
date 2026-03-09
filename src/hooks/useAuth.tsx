@@ -3,6 +3,13 @@ import { User, Session } from '@supabase/supabase-js';
 import { supabase } from '@/integrations/supabase/client';
 import type { AppRole } from '@/types/database';
 
+export class BannedError extends Error {
+  constructor(reason: string) {
+    super(reason);
+    this.name = 'BannedError';
+  }
+}
+
 interface AuthContextType {
   user: User | null;
   session: Session | null;
@@ -30,7 +37,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         
         if (session?.user) {
           setTimeout(() => {
-            fetchUserRole(session.user.id);
+            checkBanAndFetchRole(session.user.id).catch(() => {
+              // Ban check failed silently - user was signed out
+            });
           }, 0);
         } else {
           setRole(null);
@@ -42,7 +51,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setSession(session);
       setUser(session?.user ?? null);
       if (session?.user) {
-        fetchUserRole(session.user.id);
+        checkBanAndFetchRole(session.user.id).catch(() => {});
       }
       setLoading(false);
     });
@@ -50,7 +59,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => subscription.unsubscribe();
   }, []);
 
-  const fetchUserRole = async (userId: string) => {
+  const checkBanAndFetchRole = async (userId: string) => {
+    // Check ban status
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('is_banned, banned_reason')
+      .eq('user_id', userId)
+      .single();
+
+    if (profile?.is_banned) {
+      await supabase.auth.signOut();
+      setUser(null);
+      setSession(null);
+      setRole(null);
+      return;
+    }
+
+    // Fetch role
     const { data, error } = await supabase
       .from('user_roles')
       .select('role')
@@ -80,12 +105,32 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const signIn = async (email: string, password: string) => {
-    const { error } = await supabase.auth.signInWithPassword({
+    const { data, error } = await supabase.auth.signInWithPassword({
       email,
       password,
     });
     
-    return { error };
+    if (error) return { error };
+
+    // Check if user is banned
+    if (data.user) {
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('is_banned, banned_reason')
+        .eq('user_id', data.user.id)
+        .single();
+
+      if (profile?.is_banned) {
+        await supabase.auth.signOut();
+        setUser(null);
+        setSession(null);
+        setRole(null);
+        const reason = profile.banned_reason || 'Votre compte a été suspendu.';
+        return { error: new Error(`Compte bloqué : ${reason}`) };
+      }
+    }
+    
+    return { error: null };
   };
 
   const signOut = async () => {
